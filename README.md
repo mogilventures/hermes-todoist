@@ -1,11 +1,21 @@
 # hermes-todoist
 
-Todoist integration for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Exposes the Todoist v1 REST API as 14 native Hermes tools, ships a bundled `todoist` skill so the model knows how to use them safely, and includes an optional stdio MCP server so the same tools can be reused from any MCP-compatible client (Claude Desktop, mcp-cli, etc.).
+Opinionated Todoist integration for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Exposes the Todoist v1 REST API as 14 native Hermes tools, ships a bundled `todoist` skill so the model knows how to use them safely, and includes an optional stdio MCP server so the same tools can be reused from any MCP-compatible client.
 
+> [!IMPORTANT]
+> Todoist now offers an official hosted MCP server at `https://ai.todoist.net/mcp`. If your MCP host supports Todoist's hosted OAuth flow, the official server should usually be your first choice: it is maintained by Doist and exposes the broadest Todoist surface area.
+>
+> This package is for users who specifically want a **Hermes-native, local, personal-token integration** with deterministic safety rails and idempotent task creation behavior.
+
+Use this package when you want:
+
+- **Native Hermes tools + bundled skill** — tool names are direct (`todoist_*`) and the skill teaches Hermes the safe operating pattern.
 - **Zero runtime dependencies** — stdlib `urllib` only.
-- **Token never leaves the process** — read from `TODOIST_API_TOKEN`, never logged, never written to disk.
+- **Local personal-token auth** — read from `TODOIST_API_TOKEN`, never logged, never written to disk by this package.
 - **Safety rails** — `todoist_delete_task` refuses without `confirm: true`; `todoist_create_or_update_task` deduplicates by normalized content.
 - **Resolves names** — projects and sections can be passed by exact (case-insensitive) name or by ID; labels are passed by Todoist label name.
+
+For general MCP use, prefer Todoist's official hosted MCP server. For local/Hermes-native/safety-focused workflows, use `hermes-todoist`.
 
 ## Tools
 
