@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-todoist"
+version = "0.1.0"
+description = "Todoist integration for Hermes Agent — exposes the Todoist v1 API as native Hermes tools."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Mogil Ventures" }]
+keywords = ["hermes", "hermes-agent", "todoist", "plugin", "llm", "agent", "mcp"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "pytest-cov>=4",
+  "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/mogilventures/hermes-todoist"
+Issues = "https://github.com/mogilventures/hermes-todoist/issues"
+Source = "https://github.com/mogilventures/hermes-todoist"
+
+[project.scripts]
+hermes-todoist = "hermes_todoist.cli:main"
+
+[project.entry-points."hermes_agent.plugins"]
+todoist = "hermes_todoist"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hermes_todoist*"]
+
+[tool.setuptools.package-data]
+"hermes_todoist" = ["py.typed", "skills/todoist/SKILL.md"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]

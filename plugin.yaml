@@ -1,0 +1,28 @@
+name: todoist
+version: 0.1.0
+description: Todoist integration for Hermes — list, create, update, complete tasks via the Todoist v1 API.
+author: Mogil Ventures
+homepage: https://github.com/mogilventures/hermes-todoist
+license: MIT
+
+provides_tools:
+  - todoist_list_tasks
+  - todoist_get_task
+  - todoist_create_task
+  - todoist_update_task
+  - todoist_complete_task
+  - todoist_reopen_task
+  - todoist_delete_task
+  - todoist_list_projects
+  - todoist_list_sections
+  - todoist_list_labels
+  - todoist_add_comment
+  - todoist_list_comments
+  - todoist_find_duplicate_tasks
+  - todoist_create_or_update_task
+
+requires_env:
+  - name: TODOIST_API_TOKEN
+    description: "Todoist API token (Settings → Integrations → Developer → API token)"
+    url: "https://app.todoist.com/app/settings/integrations/developer"
+    secret: true
