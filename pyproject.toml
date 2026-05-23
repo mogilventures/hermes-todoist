@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hermes-todoist"
 version = "0.1.0"
-description = "Todoist integration for Hermes Agent — exposes the Todoist v1 API as native Hermes tools."
+description = "Local/personal-token Todoist fallback plugin and official MCP companion skills for Hermes Agent."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

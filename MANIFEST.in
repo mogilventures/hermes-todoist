@@ -3,5 +3,5 @@ include LICENSE
 include plugin.yaml
 recursive-include skills *.md
 recursive-include hermes_todoist/skills *.md
+recursive-include docs *.md
 recursive-include tests *.py
-recursive-include .github/workflows *.yml
