@@ -1,6 +1,6 @@
 name: todoist
 version: 0.1.0
-description: Local/personal-token Todoist fallback plugin for Hermes — 14 native tools with hard delete confirmation and idempotent upsert. For most users, prefer the official hosted Todoist MCP at https://ai.todoist.net/mcp.
+description: Local/personal-token Todoist plugin for Hermes — native tools and CLI with hard delete confirmation, idempotent upsert, comments, sections, pagination, and no hosted OAuth startup prompts.
 author: Mogil Ventures
 homepage: https://github.com/mogilventures/hermes-todoist
 license: MIT

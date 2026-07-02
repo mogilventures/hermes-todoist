@@ -1,13 +1,27 @@
 # hermes-todoist
 
-Hermes Agent guidance and a local-fallback plugin for Todoist.
+Hermes Agent guidance and a local, personal-token Todoist integration.
 
-> **Recommended default: Todoist's official hosted MCP server.**
-> Doist maintains a hosted MCP server at `https://ai.todoist.net/mcp` with OAuth and the broadest Todoist surface area. For most Hermes users, that is the right integration — this repo's primary value going forward is the **Hermes skill guidance** layered on top of it.
->
-> The Python plugin in this repo is preserved as a **local, personal-token fallback** for users who need offline / on-device execution, deterministic safety rails, or idempotent task creation with native `todoist_*` tool names.
+> **Noah/Hermes default:** use the local wrapper at `/root/.local/bin/todoist` and keep the official hosted Todoist MCP disabled unless explicitly needed. The hosted MCP is richer, but it can trigger repeated OAuth prompts at Hermes startup. The local path uses `TODOIST_API_TOKEN` from env or `~/.config/todoist/env`, avoids startup OAuth entirely, and includes deterministic safety rails.
 
-## Quick start (recommended): official Todoist MCP + Hermes
+## Quick start: local wrapper + Hermes
+
+```bash
+# 1. Store a personal Todoist API token locally (one-time)
+/root/.local/bin/set-todoist-token
+
+# 2. Use the OAuth-free local wrapper
+/root/.local/bin/todoist ping
+/root/.local/bin/todoist list --filter "today | overdue" --limit 10
+```
+
+The official hosted MCP remains useful for broad Todoist coverage, but keep it disabled by default on this host to avoid startup OAuth prompts:
+
+```bash
+hermes config set mcp_servers.todoist.enabled false
+```
+
+## Official MCP setup (optional)
 
 ```bash
 # 1. Add the official Todoist MCP server to Hermes (one-time, OAuth in browser)
@@ -207,7 +221,7 @@ cd hermes-todoist
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest              # 53 unit tests, no token required (all HTTP is mocked)
+pytest              # 55 unit tests, no token required (all HTTP is mocked)
 ruff check hermes_todoist tests
 ```
 

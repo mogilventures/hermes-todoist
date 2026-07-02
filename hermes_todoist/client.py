@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import uuid
+from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 
 API_BASE = "https://api.todoist.com/api/v1"
 DEFAULT_TIMEOUT = 30
 USER_AGENT = "hermes-todoist/0.1.0"
+DEFAULT_ENV_PATH = Path.home() / ".config" / "todoist" / "env"
 
 
 class TodoistError(Exception):
@@ -40,14 +44,50 @@ class TodoistAPIError(TodoistError):
         self.body = body
 
 
+def _parse_env_assignment(value: str) -> str:
+    stripped = value.strip()
+    if not stripped:
+        return ""
+    if stripped.startswith(("'", '"')):
+        try:
+            parts = shlex.split(stripped, posix=True)
+        except ValueError:
+            return stripped.strip("'\"")
+        return parts[0] if parts else ""
+    return stripped
+
+
+def _load_token_from_env_file(path: Path | None = None) -> str:
+    env_path = path or Path(os.environ.get("TODOIST_ENV_FILE", "") or DEFAULT_ENV_PATH)
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return ""
+    except OSError as exc:
+        raise TodoistAuthError(f"Could not read Todoist token file {env_path}: {exc}") from None
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        if key.strip() == "TODOIST_API_TOKEN":
+            return _parse_env_assignment(value)
+    return ""
+
+
 def _load_token_from_env() -> str:
     token = os.environ.get("TODOIST_API_TOKEN", "").strip()
-    if not token:
-        raise TodoistAuthError(
-            "Missing TODOIST_API_TOKEN. Generate one at "
-            "Todoist Settings → Integrations → Developer → API token."
-        )
-    return token
+    if token:
+        return token
+    token = _load_token_from_env_file().strip()
+    if token:
+        return token
+    raise TodoistAuthError(
+        "Missing TODOIST_API_TOKEN. Generate one at "
+        "Todoist Settings → Integrations → Developer → API token, then set "
+        "TODOIST_API_TOKEN or run /root/.local/bin/set-todoist-token."
+    )
 
 
 class TodoistClient:
@@ -97,6 +137,8 @@ class TodoistClient:
             cleaned_body = {k: v for k, v in json_body.items() if v is not None}
             data = json.dumps(cleaned_body).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        if method.upper() in {"POST", "DELETE"}:
+            headers["X-Request-Id"] = str(uuid.uuid4())
 
         req = request.Request(url, data=data, headers=headers, method=method)
         try:
@@ -162,8 +204,35 @@ class TodoistClient:
             params={"project_id": project_id, "limit": limit, "cursor": cursor},
         )
 
+    def create_project(self, payload: dict[str, Any]) -> Any:
+        return self.post("/projects", json_body=payload)
+
+    def update_project(self, project_id: str, payload: dict[str, Any]) -> Any:
+        return self.post(f"/projects/{project_id}", json_body=payload)
+
+    def delete_project(self, project_id: str) -> Any:
+        return self.delete(f"/projects/{project_id}")
+
     def list_labels(self, limit: int | None = None, cursor: str | None = None) -> Any:
         return self.get("/labels", params={"limit": limit, "cursor": cursor})
+
+    def create_section(self, payload: dict[str, Any]) -> Any:
+        return self.post("/sections", json_body=payload)
+
+    def update_section(self, section_id: str, payload: dict[str, Any]) -> Any:
+        return self.post(f"/sections/{section_id}", json_body=payload)
+
+    def delete_section(self, section_id: str) -> Any:
+        return self.delete(f"/sections/{section_id}")
+
+    def create_label(self, payload: dict[str, Any]) -> Any:
+        return self.post("/labels", json_body=payload)
+
+    def update_label(self, label_id: str, payload: dict[str, Any]) -> Any:
+        return self.post(f"/labels/{label_id}", json_body=payload)
+
+    def delete_label(self, label_id: str) -> Any:
+        return self.delete(f"/labels/{label_id}")
 
     def list_tasks(
         self,
@@ -197,6 +266,9 @@ class TodoistClient:
 
     def create_task(self, payload: dict[str, Any]) -> Any:
         return self.post("/tasks", json_body=payload)
+
+    def quick_add_task(self, payload: dict[str, Any]) -> Any:
+        return self.post("/tasks/quick", json_body=payload)
 
     def update_task(self, task_id: str, payload: dict[str, Any]) -> Any:
         return self.post(f"/tasks/{task_id}", json_body=payload)
