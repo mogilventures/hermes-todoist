@@ -42,8 +42,9 @@ def _http_error(code: int, body: bytes = b"", headers: dict[str, str] | None = N
 
 
 @pytest.fixture(autouse=True)
-def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _clear_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.delenv("TODOIST_API_TOKEN", raising=False)
+    monkeypatch.setenv("TODOIST_ENV_FILE", str(tmp_path / "missing-todoist-env"))
 
 
 def test_missing_token_raises_auth_error() -> None:
@@ -55,6 +56,13 @@ def test_missing_token_raises_auth_error() -> None:
 def test_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TODOIST_API_TOKEN", "env-token")
     assert TodoistClient()._get_token() == "env-token"
+
+
+def test_token_from_env_file(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    env_file = tmp_path / "todoist.env"
+    env_file.write_text("# comment\nTODOIST_API_TOKEN='file token'\n", encoding="utf-8")
+    monkeypatch.setenv("TODOIST_ENV_FILE", str(env_file))
+    assert TodoistClient()._get_token() == "file token"
 
 
 def test_explicit_token_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,6 +111,28 @@ def test_post_sends_json_body_and_strips_none() -> None:
     assert captured["url"] == "https://api.todoist.com/api/v1/tasks"
     assert captured["body"] == {"content": "x", "priority": 2}
     assert captured["headers"]["content-type"] == "application/json"
+    headers = captured["headers"]
+    assert isinstance(headers, dict)
+    assert headers.get("x-request-id")
+
+
+def test_quick_add_uses_quick_endpoint() -> None:
+    client = TodoistClient(token="t")
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req, timeout):  # type: ignore[no-untyped-def]
+        captured["url"] = req.full_url
+        captured["method"] = req.get_method()
+        captured["body"] = json.loads(req.data.decode())
+        return _FakeResponse(b'{"id": "1", "content": "call Sam"}')
+
+    with patch("hermes_todoist.client.request.urlopen", side_effect=fake_urlopen):
+        out = client.quick_add_task({"text": "call Sam tomorrow"})
+
+    assert out["content"] == "call Sam"
+    assert captured["method"] == "POST"
+    assert captured["url"] == "https://api.todoist.com/api/v1/tasks/quick"
+    assert captured["body"] == {"text": "call Sam tomorrow"}
 
 
 def test_401_becomes_auth_error() -> None:
