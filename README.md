@@ -41,7 +41,7 @@ Full setup, OAuth flow, tool-naming notes, and troubleshooting are in [docs/offi
 
 | | **Official Todoist MCP** (recommended) | **Local plugin** (this repo's Python package) |
 |---|---|---|
-| Auth | OAuth via Hermes MCP host | `TODOIST_API_TOKEN` env var |
+| Auth | OAuth via Hermes MCP host | Direct token, token-file indirection, or dotenv file |
 | Runtime | Hosted by Doist | Local Python process / stdio MCP |
 | Surface | Broad — whatever Doist exposes & maintains | 14 curated tools, intentionally small |
 | Tool names | Host-prefixed (e.g. `mcp_todoist_*`) | Native Hermes (`todoist_*`) |
@@ -148,8 +148,9 @@ requirement and does not support alternative environment variables. Use the
 `@/absolute/path` form when Hermes should see a non-secret reference while the
 actual token remains in a mounted tmpfs or container secret file.
 
-Token files must use an absolute path, contain exactly one non-empty line, and
-be no larger than 16 KiB. Token values and file contents are never logged.
+Token files must use a literal absolute path (no `~` expansion), be regular
+UTF-8 files containing exactly one non-empty Bearer-token line, and be no larger
+than 16 KiB. Token values and file contents are never logged.
 
 The token is loaded lazily on the first HTTP call, so importing the package or running `hermes plugins list` does not require it.
 
@@ -234,7 +235,7 @@ cd hermes-todoist
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest              # 55 unit tests, no token required (all HTTP is mocked)
+pytest              # Unit tests require no token; all HTTP is mocked
 ruff check hermes_todoist tests
 ```
 

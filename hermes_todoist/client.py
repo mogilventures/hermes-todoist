@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
+import stat
 import uuid
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,7 @@ DEFAULT_TIMEOUT = 30
 USER_AGENT = "hermes-todoist/0.1.1"
 DEFAULT_ENV_PATH = Path.home() / ".config" / "todoist" / "env"
 MAX_TOKEN_FILE_BYTES = 16 * 1024
+_BEARER_TOKEN_RE = re.compile(r"[A-Za-z0-9._~+/\-]+=*\Z")
 
 
 class TodoistError(Exception):
@@ -47,7 +50,7 @@ class TodoistAPIError(TodoistError):
 
 
 def _parse_env_assignment(value: str) -> str:
-    stripped = value.strip()
+    stripped = value.strip(" ")
     if not stripped:
         return ""
     if stripped.startswith(("'", '"')):
@@ -59,40 +62,86 @@ def _parse_env_assignment(value: str) -> str:
     return stripped
 
 
-def _load_token_file(path_value: str | Path, *, source: str) -> str:
-    path = Path(path_value).expanduser()
+def _validate_token(value: str, *, source: str) -> str:
+    token = value.strip(" ")
+    if not token:
+        raise TodoistAuthError(f"Todoist token from {source} is empty")
+    if _BEARER_TOKEN_RE.fullmatch(token) is None:
+        raise TodoistAuthError(
+            f"Todoist token from {source} contains characters that are invalid "
+            "in an HTTP Bearer token"
+        )
+    return token
+
+
+def _read_small_utf8_file(
+    path: Path,
+    *,
+    source: str,
+    missing_ok: bool = False,
+) -> str:
     if not path.is_absolute():
         raise TodoistAuthError(f"{source} must point to an absolute path")
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        if path.stat().st_size > MAX_TOKEN_FILE_BYTES:
-            raise TodoistAuthError(f"Todoist token file from {source} is unexpectedly large")
-        token = path.read_text(encoding="utf-8").strip()
+        fd: int | None = os.open(path, flags)
     except FileNotFoundError:
+        if missing_ok:
+            return ""
         raise TodoistAuthError(f"Todoist token file from {source} does not exist") from None
     except OSError as exc:
-        raise TodoistAuthError(f"Could not read Todoist token file from {source}: {exc}") from None
-    if not token:
+        detail = exc.strerror or type(exc).__name__
+        raise TodoistAuthError(f"Could not open Todoist file from {source}: {detail}") from None
+
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise TodoistAuthError(f"Todoist file from {source} must be a regular file")
+        with os.fdopen(fd, "rb") as stream:
+            fd = None
+            raw = stream.read(MAX_TOKEN_FILE_BYTES + 1)
+    except OSError as exc:
+        detail = exc.strerror or type(exc).__name__
+        raise TodoistAuthError(f"Could not read Todoist file from {source}: {detail}") from None
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+    if len(raw) > MAX_TOKEN_FILE_BYTES:
+        raise TodoistAuthError(f"Todoist file from {source} is unexpectedly large")
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise TodoistAuthError(f"Todoist file from {source} must be valid UTF-8") from None
+
+
+def _load_token_file(path_value: str | Path, *, source: str) -> str:
+    text = _read_small_utf8_file(Path(path_value), source=source)
+    if text.endswith("\r\n"):
+        token = text[:-2]
+    elif text.endswith(("\r", "\n")):
+        token = text[:-1]
+    else:
+        token = text
+    if not token.strip():
         raise TodoistAuthError(f"Todoist token file from {source} is empty")
-    if "\n" in token or "\r" in token:
+    if "\r" in token or "\n" in token:
         raise TodoistAuthError(f"Todoist token file from {source} must contain one line")
-    return token
+    return _validate_token(token, source=source)
 
 
 def _load_token_from_env_file(path: Path | None = None) -> str:
     env_path = path or Path(os.environ.get("TODOIST_ENV_FILE", "") or DEFAULT_ENV_PATH)
-    if not env_path.is_absolute():
-        raise TodoistAuthError("TODOIST_ENV_FILE must point to an absolute path")
-    try:
-        if env_path.stat().st_size > MAX_TOKEN_FILE_BYTES:
-            raise TodoistAuthError("Todoist environment file is unexpectedly large")
-        lines = env_path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return ""
-    except OSError as exc:
-        raise TodoistAuthError(f"Could not read Todoist token file {env_path}: {exc}") from None
+    text = _read_small_utf8_file(
+        env_path,
+        source="TODOIST_ENV_FILE",
+        missing_ok=True,
+    )
 
-    for line in lines:
-        stripped = line.strip()
+    for line in text.split("\n"):
+        if line.endswith("\r"):
+            line = line[:-1]
+        stripped = line.strip(" \t")
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, value = stripped.split("=", 1)
@@ -102,17 +151,17 @@ def _load_token_from_env_file(path: Path | None = None) -> str:
 
 
 def _load_token_from_env() -> str:
-    token = os.environ.get("TODOIST_API_TOKEN", "").strip()
+    token = os.environ.get("TODOIST_API_TOKEN", "").strip(" ")
     if token:
         if token.startswith("@"):
             return _load_token_file(token[1:], source="TODOIST_API_TOKEN")
-        return token
+        return _validate_token(token, source="TODOIST_API_TOKEN")
     token_file = os.environ.get("TODOIST_API_TOKEN_FILE", "").strip()
     if token_file:
         return _load_token_file(token_file, source="TODOIST_API_TOKEN_FILE")
-    token = _load_token_from_env_file().strip()
+    token = _load_token_from_env_file()
     if token:
-        return token
+        return _validate_token(token, source="TODOIST_ENV_FILE")
     raise TodoistAuthError(
         "Missing TODOIST_API_TOKEN. Generate one at "
         "Todoist Settings → Integrations → Developer → API token, then set "
@@ -141,7 +190,7 @@ class TodoistClient:
 
     def _get_token(self) -> str:
         if self._token:
-            return self._token
+            return _validate_token(self._token, source="TodoistClient(token=...)")
         return _load_token_from_env()
 
     def _request(
