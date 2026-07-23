@@ -247,6 +247,36 @@ hermes-todoist ping
 
 The `hermes-todoist ping` command performs `GET /projects?limit=1` and prints the response — minimal traffic, but enough to confirm the token works. **Do not** enable this in CI; the rate-limit and side-effect risks are not worth it.
 
+### GitHub Actions end-to-end test
+
+The manually triggered `Todoist E2E` workflow exercises every registered Hermes
+Todoist tool against a real account. It creates uniquely named projects, sections,
+tasks, a label, and a comment, verifies reads and mutations, tests delete confirmation,
+and removes all test-owned resources in a `finally` cleanup.
+
+Configure it once in the GitHub repository:
+
+1. Open **Settings → Environments** and create an environment named `todoist-e2e`.
+2. Add an environment secret named `TODOIST_API_TOKEN` containing the token from
+   Todoist **Settings → Integrations → Developer**.
+3. Optionally add required reviewers to the environment to protect the destructive run.
+4. Open **Actions → Todoist E2E → Run workflow** and select the branch to test.
+
+The workflow is deliberately `workflow_dispatch`-only. It does not expose an account
+token to pull requests, does not run several Python versions against the same account,
+and serializes runs with a repository-wide concurrency group.
+
+To run the same suite locally:
+
+```bash
+export TODOIST_API_TOKEN=your-token
+export HERMES_TODOIST_E2E=1
+pytest -v -m e2e tests/e2e
+```
+
+Never enable the E2E marker in untrusted CI. A Todoist personal API token grants access
+to the entire account, not only to resources created by the test.
+
 ## Design notes
 
 - **API base.** `https://api.todoist.com/api/v1`. The plugin sets `User-Agent: hermes-todoist/<version>`.

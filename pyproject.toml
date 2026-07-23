@@ -53,6 +53,9 @@ include = ["hermes_todoist*"]
 minversion = "7.0"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+markers = [
+  "e2e: tests that mutate a real Todoist account and require TODOIST_API_TOKEN",
+]
 
 [tool.ruff]
 line-length = 100
