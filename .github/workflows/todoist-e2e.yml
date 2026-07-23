@@ -2,9 +2,6 @@ name: Todoist E2E
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - agent/full-crud
 
 permissions:
   contents: read
