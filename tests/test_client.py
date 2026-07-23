@@ -4,7 +4,7 @@ from __future__ import annotations
 import io
 import json
 from unittest.mock import patch
-from urllib import error
+from urllib import error, parse
 
 import pytest
 
@@ -133,6 +133,66 @@ def test_quick_add_uses_quick_endpoint() -> None:
     assert captured["method"] == "POST"
     assert captured["url"] == "https://api.todoist.com/api/v1/tasks/quick"
     assert captured["body"] == {"text": "call Sam tomorrow"}
+
+
+def test_filter_tasks_uses_dedicated_v1_endpoint() -> None:
+    client = TodoistClient(token="t")
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req, timeout):  # type: ignore[no-untyped-def]
+        captured["url"] = req.full_url
+        return _FakeResponse(b'{"results": [], "next_cursor": null}')
+
+    with patch("hermes_todoist.client.request.urlopen", side_effect=fake_urlopen):
+        client.list_tasks(filter_query="today | overdue", lang="en", limit=20)
+
+    assert captured["url"].startswith("https://api.todoist.com/api/v1/tasks/filter?")
+    assert "query=today+%7C+overdue" in captured["url"]
+    assert "lang=en" in captured["url"]
+    assert "limit=20" in captured["url"]
+
+
+def test_filter_tasks_rejects_silently_ignored_structured_filters() -> None:
+    client = TodoistClient(token="t")
+    with pytest.raises(TodoistError, match="cannot be combined"):
+        client.list_tasks(filter_query="today", project_id="100")
+
+
+def test_sync_command_posts_form_and_validates_status() -> None:
+    client = TodoistClient(token="t")
+    captured: dict[str, object] = {}
+
+    def fake_urlopen(req, timeout):  # type: ignore[no-untyped-def]
+        captured["url"] = req.full_url
+        captured["headers"] = {k.lower(): v for k, v in req.header_items()}
+        form = parse.parse_qs(req.data.decode())
+        command = json.loads(form["commands"][0])[0]
+        captured["command"] = command
+        response = {"sync_status": {command["uuid"]: "ok"}}
+        return _FakeResponse(json.dumps(response).encode())
+
+    with patch("hermes_todoist.client.request.urlopen", side_effect=fake_urlopen):
+        client.move_project("100", "200")
+
+    assert captured["url"] == "https://api.todoist.com/api/v1/sync"
+    assert captured["headers"]["content-type"] == "application/x-www-form-urlencoded"
+    assert captured["command"]["type"] == "project_move"
+    assert captured["command"]["args"] == {"id": "100", "parent_id": "200"}
+
+
+def test_sync_command_error_becomes_client_error() -> None:
+    client = TodoistClient(token="t")
+
+    def fake_urlopen(req, timeout):  # type: ignore[no-untyped-def]
+        form = parse.parse_qs(req.data.decode())
+        command = json.loads(form["commands"][0])[0]
+        response = {"sync_status": {command["uuid"]: {"error": "invalid_argument"}}}
+        return _FakeResponse(json.dumps(response).encode())
+
+    with patch("hermes_todoist.client.request.urlopen", side_effect=fake_urlopen), pytest.raises(
+        TodoistError, match="project_reorder.*failed"
+    ):
+        client.reorder_projects([{"id": "100", "child_order": 1}])
 
 
 def test_401_becomes_auth_error() -> None:

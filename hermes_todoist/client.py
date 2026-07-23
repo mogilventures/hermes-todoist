@@ -15,7 +15,7 @@ from urllib import error, parse, request
 
 API_BASE = "https://api.todoist.com/api/v1"
 DEFAULT_TIMEOUT = 30
-USER_AGENT = "hermes-todoist/0.1.0"
+USER_AGENT = "hermes-todoist/0.2.0"
 DEFAULT_ENV_PATH = Path.home() / ".config" / "todoist" / "env"
 
 
@@ -120,7 +120,10 @@ class TodoistClient:
         *,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        form_body: dict[str, Any] | None = None,
     ) -> Any:
+        if json_body is not None and form_body is not None:
+            raise ValueError("json_body and form_body are mutually exclusive")
         url = self.base_url + path
         if params:
             cleaned_params = {k: v for k, v in params.items() if v is not None}
@@ -137,6 +140,10 @@ class TodoistClient:
             cleaned_body = {k: v for k, v in json_body.items() if v is not None}
             data = json.dumps(cleaned_body).encode("utf-8")
             headers["Content-Type"] = "application/json"
+        elif form_body is not None:
+            cleaned_body = {k: v for k, v in form_body.items() if v is not None}
+            data = parse.urlencode(cleaned_body).encode("utf-8")
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
         if method.upper() in {"POST", "DELETE"}:
             headers["X-Request-Id"] = str(uuid.uuid4())
 
@@ -186,12 +193,30 @@ class TodoistClient:
     def post(self, path: str, json_body: dict[str, Any] | None = None) -> Any:
         return self._request("POST", path, json_body=json_body or {})
 
+    def post_form(self, path: str, form_body: dict[str, Any]) -> Any:
+        return self._request("POST", path, form_body=form_body)
+
     def delete(self, path: str) -> Any:
         return self._request("DELETE", path)
+
+    def sync_command(self, command_type: str, args: dict[str, Any]) -> Any:
+        command_uuid = str(uuid.uuid4())
+        commands = [{"type": command_type, "uuid": command_uuid, "args": args}]
+        response = self.post_form("/sync", {"commands": json.dumps(commands)})
+        if not isinstance(response, dict):
+            raise TodoistError(f"Invalid response for Todoist sync command {command_type!r}")
+        status = response.get("sync_status", {}).get(command_uuid)
+        if status != "ok":
+            detail = json.dumps(status, ensure_ascii=False, default=str)
+            raise TodoistError(f"Todoist sync command {command_type!r} failed: {detail}")
+        return response
 
     # ---- domain endpoints ----
     def list_projects(self, limit: int | None = None, cursor: str | None = None) -> Any:
         return self.get("/projects", params={"limit": limit, "cursor": cursor})
+
+    def get_project(self, project_id: str) -> Any:
+        return self.get(f"/projects/{project_id}")
 
     def list_sections(
         self,
@@ -213,8 +238,23 @@ class TodoistClient:
     def delete_project(self, project_id: str) -> Any:
         return self.delete(f"/projects/{project_id}")
 
+    def archive_project(self, project_id: str) -> Any:
+        return self.post(f"/projects/{project_id}/archive")
+
+    def unarchive_project(self, project_id: str) -> Any:
+        return self.post(f"/projects/{project_id}/unarchive")
+
+    def move_project(self, project_id: str, parent_id: str | None) -> Any:
+        return self.sync_command("project_move", {"id": project_id, "parent_id": parent_id})
+
+    def reorder_projects(self, projects: list[dict[str, Any]]) -> Any:
+        return self.sync_command("project_reorder", {"projects": projects})
+
     def list_labels(self, limit: int | None = None, cursor: str | None = None) -> Any:
         return self.get("/labels", params={"limit": limit, "cursor": cursor})
+
+    def get_section(self, section_id: str) -> Any:
+        return self.get(f"/sections/{section_id}")
 
     def create_section(self, payload: dict[str, Any]) -> Any:
         return self.post("/sections", json_body=payload)
@@ -224,6 +264,21 @@ class TodoistClient:
 
     def delete_section(self, section_id: str) -> Any:
         return self.delete(f"/sections/{section_id}")
+
+    def archive_section(self, section_id: str) -> Any:
+        return self.post(f"/sections/{section_id}/archive")
+
+    def unarchive_section(self, section_id: str) -> Any:
+        return self.post(f"/sections/{section_id}/unarchive")
+
+    def move_section(self, section_id: str, project_id: str) -> Any:
+        return self.sync_command("section_move", {"id": section_id, "project_id": project_id})
+
+    def reorder_sections(self, sections: list[dict[str, Any]]) -> Any:
+        return self.sync_command("section_reorder", {"sections": sections})
+
+    def get_label(self, label_id: str) -> Any:
+        return self.get(f"/labels/{label_id}")
 
     def create_label(self, payload: dict[str, Any]) -> Any:
         return self.post("/labels", json_body=payload)
@@ -247,13 +302,28 @@ class TodoistClient:
         limit: int | None = None,
         cursor: str | None = None,
     ) -> Any:
+        if filter_query:
+            conflicting_filters = (project_id, section_id, parent_id, label, ids)
+            if any(value not in (None, [], "") for value in conflicting_filters):
+                raise TodoistError(
+                    "Todoist filter queries cannot be combined with project, section, "
+                    "parent, label, or IDs; include those constraints in the filter query"
+                )
+            return self.get(
+                "/tasks/filter",
+                params={
+                    "query": filter_query,
+                    "lang": lang,
+                    "limit": limit,
+                    "cursor": cursor,
+                },
+            )
+
         params: dict[str, Any] = {
             "project_id": project_id,
             "section_id": section_id,
             "parent_id": parent_id,
             "label": label,
-            "filter": filter_query,
-            "lang": lang,
             "limit": limit,
             "cursor": cursor,
         }
@@ -285,6 +355,9 @@ class TodoistClient:
     def move_task(self, task_id: str, payload: dict[str, Any]) -> Any:
         return self.post(f"/tasks/{task_id}/move", json_body=payload)
 
+    def reorder_tasks(self, tasks: list[dict[str, Any]]) -> Any:
+        return self.sync_command("item_reorder", {"items": tasks})
+
     def list_comments(
         self,
         *,
@@ -305,3 +378,12 @@ class TodoistClient:
 
     def create_comment(self, payload: dict[str, Any]) -> Any:
         return self.post("/comments", json_body=payload)
+
+    def get_comment(self, comment_id: str) -> Any:
+        return self.get(f"/comments/{comment_id}")
+
+    def update_comment(self, comment_id: str, payload: dict[str, Any]) -> Any:
+        return self.post(f"/comments/{comment_id}", json_body=payload)
+
+    def delete_comment(self, comment_id: str) -> Any:
+        return self.delete(f"/comments/{comment_id}")
