@@ -1,5 +1,5 @@
 name: todoist
-version: 0.1.0
+version: 0.1.1
 description: Local/personal-token Todoist plugin for Hermes — native tools and CLI with hard delete confirmation, idempotent upsert, comments, sections, pagination, and no hosted OAuth startup prompts.
 author: Mogil Ventures
 homepage: https://github.com/mogilventures/hermes-todoist
@@ -23,6 +23,6 @@ provides_tools:
 
 requires_env:
   - name: TODOIST_API_TOKEN
-    description: "Todoist API token (Settings → Integrations → Developer → API token)"
+    description: "Todoist API token, or @/absolute/path to a runtime secret file (Settings → Integrations → Developer → API token)"
     url: "https://app.todoist.com/app/settings/integrations/developer"
     secret: true

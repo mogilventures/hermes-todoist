@@ -1,7 +1,8 @@
 """Minimal stdlib-only HTTP client for the Todoist API v1.
 
-The token is read from the ``TODOIST_API_TOKEN`` environment variable. It is
-never logged, never echoed, and never written to disk by this module.
+The token is read from an explicit argument, an environment variable, or a
+configured secret file. It is never logged, echoed, or written to disk by this
+module.
 """
 from __future__ import annotations
 
@@ -15,8 +16,9 @@ from urllib import error, parse, request
 
 API_BASE = "https://api.todoist.com/api/v1"
 DEFAULT_TIMEOUT = 30
-USER_AGENT = "hermes-todoist/0.1.0"
+USER_AGENT = "hermes-todoist/0.1.1"
 DEFAULT_ENV_PATH = Path.home() / ".config" / "todoist" / "env"
+MAX_TOKEN_FILE_BYTES = 16 * 1024
 
 
 class TodoistError(Exception):
@@ -57,9 +59,32 @@ def _parse_env_assignment(value: str) -> str:
     return stripped
 
 
+def _load_token_file(path_value: str | Path, *, source: str) -> str:
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        raise TodoistAuthError(f"{source} must point to an absolute path")
+    try:
+        if path.stat().st_size > MAX_TOKEN_FILE_BYTES:
+            raise TodoistAuthError(f"Todoist token file from {source} is unexpectedly large")
+        token = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        raise TodoistAuthError(f"Todoist token file from {source} does not exist") from None
+    except OSError as exc:
+        raise TodoistAuthError(f"Could not read Todoist token file from {source}: {exc}") from None
+    if not token:
+        raise TodoistAuthError(f"Todoist token file from {source} is empty")
+    if "\n" in token or "\r" in token:
+        raise TodoistAuthError(f"Todoist token file from {source} must contain one line")
+    return token
+
+
 def _load_token_from_env_file(path: Path | None = None) -> str:
     env_path = path or Path(os.environ.get("TODOIST_ENV_FILE", "") or DEFAULT_ENV_PATH)
+    if not env_path.is_absolute():
+        raise TodoistAuthError("TODOIST_ENV_FILE must point to an absolute path")
     try:
+        if env_path.stat().st_size > MAX_TOKEN_FILE_BYTES:
+            raise TodoistAuthError("Todoist environment file is unexpectedly large")
         lines = env_path.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError:
         return ""
@@ -79,14 +104,20 @@ def _load_token_from_env_file(path: Path | None = None) -> str:
 def _load_token_from_env() -> str:
     token = os.environ.get("TODOIST_API_TOKEN", "").strip()
     if token:
+        if token.startswith("@"):
+            return _load_token_file(token[1:], source="TODOIST_API_TOKEN")
         return token
+    token_file = os.environ.get("TODOIST_API_TOKEN_FILE", "").strip()
+    if token_file:
+        return _load_token_file(token_file, source="TODOIST_API_TOKEN_FILE")
     token = _load_token_from_env_file().strip()
     if token:
         return token
     raise TodoistAuthError(
         "Missing TODOIST_API_TOKEN. Generate one at "
         "Todoist Settings → Integrations → Developer → API token, then set "
-        "TODOIST_API_TOKEN or run /root/.local/bin/set-todoist-token."
+        "TODOIST_API_TOKEN, TODOIST_API_TOKEN=@/absolute/secret/path, "
+        "TODOIST_API_TOKEN_FILE, or run /root/.local/bin/set-todoist-token."
     )
 
 

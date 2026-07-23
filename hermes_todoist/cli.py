@@ -1,8 +1,8 @@
 """Robust local Todoist CLI for Hermes.
 
-The CLI is intentionally token-based (``TODOIST_API_TOKEN`` or
-``~/.config/todoist/env``), so Hermes can use Todoist without the hosted OAuth
-MCP startup flow.
+The CLI is intentionally token-based (direct environment value, mounted secret
+file, or ``~/.config/todoist/env``), so Hermes can use Todoist without the
+hosted OAuth MCP startup flow.
 """
 from __future__ import annotations
 
