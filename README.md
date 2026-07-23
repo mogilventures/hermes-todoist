@@ -2,7 +2,7 @@
 
 Hermes Agent guidance and a local, personal-token Todoist integration.
 
-> **Noah/Hermes default:** use the local wrapper at `/root/.local/bin/todoist` and keep the official hosted Todoist MCP disabled unless explicitly needed. The hosted MCP is richer, but it can trigger repeated OAuth prompts at Hermes startup. The local path uses `TODOIST_API_TOKEN` from env or `~/.config/todoist/env`, avoids startup OAuth entirely, and includes deterministic safety rails.
+> **Noah/Hermes default:** use the local wrapper at `/root/.local/bin/todoist` and keep the official hosted Todoist MCP disabled unless explicitly needed. The hosted MCP is richer, but it can trigger repeated OAuth prompts at Hermes startup. The local path uses a direct token, a mounted secret file, or `~/.config/todoist/env`, avoids startup OAuth entirely, and includes deterministic safety rails.
 
 ## Quick start: local wrapper + Hermes
 
@@ -41,7 +41,7 @@ Full setup, OAuth flow, tool-naming notes, and troubleshooting are in [docs/offi
 
 | | **Official Todoist MCP** (recommended) | **Local plugin** (this repo's Python package) |
 |---|---|---|
-| Auth | OAuth via Hermes MCP host | `TODOIST_API_TOKEN` env var |
+| Auth | OAuth via Hermes MCP host | Direct token, token-file indirection, or dotenv file |
 | Runtime | Hosted by Doist | Local Python process / stdio MCP |
 | Surface | Broad — whatever Doist exposes & maintains | 14 curated tools, intentionally small |
 | Tool names | Host-prefixed (e.g. `mcp_todoist_*`) | Native Hermes (`todoist_*`) |
@@ -78,7 +78,7 @@ Choose it when you want:
 
 - **Native Hermes tools + bundled skill** — tool names are direct (`todoist_*`) and the skill teaches Hermes the safe operating pattern.
 - **Zero runtime dependencies** — stdlib `urllib` only.
-- **Local personal-token auth** — read from `TODOIST_API_TOKEN`, never logged, never written to disk by this package.
+- **Local personal-token auth** — read from an environment value or secret file, never logged, never written to disk by this package.
 - **Safety rails** — `todoist_delete_task` refuses without `confirm: true`; `todoist_create_or_update_task` deduplicates by normalized content.
 - **Resolves names** — projects and sections can be passed by exact (case-insensitive) name or by ID; labels are passed by Todoist label name.
 
@@ -132,11 +132,25 @@ export TODOIST_API_TOKEN=...
 
 ## Configuration
 
-The plugin reads exactly one environment variable:
+The plugin accepts the token from several sources in precedence order:
 
-| Var | Required | Description |
-|-----|----------|-------------|
-| `TODOIST_API_TOKEN` | yes | Your personal Todoist API token. |
+| Source | Description |
+|-----|-------------|
+| Explicit `TodoistClient(token=...)` argument | Intended for embedding and tests |
+| `TODOIST_API_TOKEN` | The personal token itself |
+| `TODOIST_API_TOKEN=@/absolute/path` | Indirection to a raw one-line runtime secret file; recommended for Hermes deployments with mounted secrets |
+| `TODOIST_API_TOKEN_FILE=/absolute/path` | Raw one-line token file for non-Hermes launchers |
+| `TODOIST_ENV_FILE=/absolute/path` | dotenv-style file containing `TODOIST_API_TOKEN=...` |
+| `~/.config/todoist/env` | Backward-compatible default dotenv file |
+
+Hermes currently gates plugin loading on the manifest's `TODOIST_API_TOKEN`
+requirement and does not support alternative environment variables. Use the
+`@/absolute/path` form when Hermes should see a non-secret reference while the
+actual token remains in a mounted tmpfs or container secret file.
+
+Token files must use a literal absolute path (no `~` expansion), be regular
+UTF-8 files containing exactly one non-empty Bearer-token line, and be no larger
+than 16 KiB. Token values and file contents are never logged.
 
 The token is loaded lazily on the first HTTP call, so importing the package or running `hermes plugins list` does not require it.
 
@@ -173,7 +187,7 @@ print(json.loads(tools.todoist_create_task({"content": "Ship hermes-todoist", "p
 ### Helper CLI
 
 ```bash
-hermes-todoist version          # 0.1.0
+hermes-todoist version          # 0.1.1
 hermes-todoist tools            # list registered tool names
 hermes-todoist ping             # GET /projects?limit=1 — verifies token + connectivity
 hermes-todoist mcp              # run the stdio MCP server (see below)
@@ -221,7 +235,7 @@ cd hermes-todoist
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest              # 55 unit tests, no token required (all HTTP is mocked)
+pytest              # Unit tests require no token; all HTTP is mocked
 ruff check hermes_todoist tests
 ```
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from unittest.mock import patch
 from urllib import error
 
@@ -44,6 +45,7 @@ def _http_error(code: int, body: bytes = b"", headers: dict[str, str] | None = N
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.delenv("TODOIST_API_TOKEN", raising=False)
+    monkeypatch.delenv("TODOIST_API_TOKEN_FILE", raising=False)
     monkeypatch.setenv("TODOIST_ENV_FILE", str(tmp_path / "missing-todoist-env"))
 
 
@@ -58,16 +60,163 @@ def test_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert TodoistClient()._get_token() == "env-token"
 
 
+def test_token_from_indirect_env_reference(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("mounted-secret\n", encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN", f"@{token_file}")
+    assert TodoistClient()._get_token() == "mounted-secret"
+
+
+def test_token_from_explicit_file_variable(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("file-secret\n", encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    assert TodoistClient()._get_token() == "file-secret"
+
+
+def test_direct_token_takes_precedence_over_file(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("file-secret\n", encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN", "direct-secret")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    assert TodoistClient()._get_token() == "direct-secret"
+
+
+def test_token_file_requires_absolute_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TODOIST_API_TOKEN", "@relative/token")
+    with pytest.raises(TodoistAuthError, match="absolute path"):
+        TodoistClient()._get_token()
+
+
+def test_token_file_does_not_expand_home(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("mounted-secret\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("TODOIST_API_TOKEN", "@~/todoist-token")
+    with pytest.raises(TodoistAuthError, match="absolute path"):
+        TodoistClient()._get_token()
+
+
+def test_token_file_rejects_multiple_lines(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("first\nsecond\n", encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    with pytest.raises(TodoistAuthError, match="one line"):
+        TodoistClient()._get_token()
+
+
+def test_token_file_rejects_extra_blank_line(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("first\n\n", encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    with pytest.raises(TodoistAuthError, match="one line"):
+        TodoistClient()._get_token()
+
+
+def test_token_file_rejects_other_line_separators(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("first\v", encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    with pytest.raises(TodoistAuthError, match="invalid"):
+        TodoistClient()._get_token()
+
+
+def test_token_file_rejects_unexpected_size(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("x" * (16 * 1024 + 1), encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    with pytest.raises(TodoistAuthError, match="unexpectedly large"):
+        TodoistClient()._get_token()
+
+
+def test_token_file_rejects_invalid_utf8(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_bytes(b"secret-\xff")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    with pytest.raises(TodoistAuthError, match="valid UTF-8"):
+        TodoistClient()._get_token()
+
+
+def test_token_source_rejects_non_regular_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    token_directory = tmp_path / "token-directory"
+    token_directory.mkdir()
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_directory))
+    with pytest.raises(TodoistAuthError, match="regular file"):
+        TodoistClient()._get_token()
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are not available")
+def test_token_source_rejects_fifo_without_blocking(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    token_fifo = tmp_path / "token-fifo"
+    os.mkfifo(token_fifo)
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_fifo))
+    with pytest.raises(TodoistAuthError, match="regular file"):
+        TodoistClient()._get_token()
+
+
+def test_env_file_requires_absolute_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TODOIST_ENV_FILE", "relative/todoist.env")
+    with pytest.raises(TodoistAuthError, match="absolute path"):
+        TodoistClient()._get_token()
+
+
+def test_token_file_error_does_not_expose_secret_path_contents(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    token_file = tmp_path / "todoist-token"
+    secret = "first-secret\nsecond-secret"
+    token_file.write_text(secret, encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    with pytest.raises(TodoistAuthError) as excinfo:
+        TodoistClient()._get_token()
+    assert "first-secret" not in str(excinfo.value)
+    assert "second-secret" not in str(excinfo.value)
+
+
 def test_token_from_env_file(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     env_file = tmp_path / "todoist.env"
-    env_file.write_text("# comment\nTODOIST_API_TOKEN='file token'\n", encoding="utf-8")
+    env_file.write_text("# comment\nTODOIST_API_TOKEN='file-token'\n", encoding="utf-8")
     monkeypatch.setenv("TODOIST_ENV_FILE", str(env_file))
-    assert TodoistClient()._get_token() == "file token"
+    assert TodoistClient()._get_token() == "file-token"
+
+
+def test_token_file_takes_precedence_over_env_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    token_file = tmp_path / "todoist-token"
+    token_file.write_text("raw-file-token\n", encoding="utf-8")
+    env_file = tmp_path / "todoist.env"
+    env_file.write_text("TODOIST_API_TOKEN=dotenv-token\n", encoding="utf-8")
+    monkeypatch.setenv("TODOIST_API_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("TODOIST_ENV_FILE", str(env_file))
+    assert TodoistClient()._get_token() == "raw-file-token"
 
 
 def test_explicit_token_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TODOIST_API_TOKEN", "env-token")
     assert TodoistClient(token="explicit")._get_token() == "explicit"
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_token_rejects_invalid_bearer_characters_without_exposing_value(
+    explicit: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "secret-token\nInjected: value"
+    if explicit:
+        client = TodoistClient(token=secret)
+    else:
+        monkeypatch.setenv("TODOIST_API_TOKEN", secret)
+        client = TodoistClient()
+    with pytest.raises(TodoistAuthError, match="invalid") as excinfo:
+        client._get_token()
+    assert secret not in str(excinfo.value)
 
 
 def test_get_builds_url_and_headers() -> None:
