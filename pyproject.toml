@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-todoist"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local/personal-token Todoist fallback plugin and official MCP companion skills for Hermes Agent."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -53,6 +53,9 @@ include = ["hermes_todoist*"]
 minversion = "7.0"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+markers = [
+  "e2e: tests that mutate a real Todoist account and require TODOIST_API_TOKEN",
+]
 
 [tool.ruff]
 line-length = 100

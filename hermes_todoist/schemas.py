@@ -126,6 +126,51 @@ UPDATE_TASK = {
     },
 }
 
+MOVE_TASK = {
+    "name": "todoist_move_task",
+    "description": (
+        "Move a task to exactly one destination: a project, a section, or a parent task. "
+        "Project and section values may be IDs or exact case-insensitive names."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "string"},
+            "project": {"type": "string", "description": "Destination project ID or name."},
+            "section": {"type": "string", "description": "Destination section ID or name."},
+            "section_project": {
+                "type": "string",
+                "description": "Optional project ID or name used to disambiguate the section.",
+            },
+            "parent_id": {"type": "string", "description": "Destination parent task ID."},
+        },
+        "required": ["task_id"],
+    },
+}
+
+REORDER_TASKS = {
+    "name": "todoist_reorder_tasks",
+    "description": "Reorder one or more sibling tasks by assigning their child order values.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "tasks": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string"},
+                        "order": {"type": "integer", "minimum": 0},
+                    },
+                    "required": ["task_id", "order"],
+                },
+            }
+        },
+        "required": ["tasks"],
+    },
+}
+
 COMPLETE_TASK = {
     "name": "todoist_complete_task",
     "description": "Mark a Todoist task as completed. Recurring tasks advance to their next occurrence.",
@@ -182,6 +227,127 @@ LIST_PROJECTS = {
     },
 }
 
+GET_PROJECT = {
+    "name": "todoist_get_project",
+    "description": "Get a single active Todoist project by ID or exact name.",
+    "parameters": {
+        "type": "object",
+        "properties": {"project": {"type": "string"}},
+        "required": ["project"],
+    },
+}
+
+CREATE_PROJECT = {
+    "name": "todoist_create_project",
+    "description": "Create a Todoist project, optionally as a child of another project.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "parent": {"type": "string", "description": "Parent project ID or name."},
+            "color": {"type": "string"},
+            "is_favorite": {"type": "boolean"},
+            "view_style": {"type": "string", "enum": ["list", "board", "calendar"]},
+        },
+        "required": ["name"],
+    },
+}
+
+UPDATE_PROJECT = {
+    "name": "todoist_update_project",
+    "description": "Update mutable fields on an active Todoist project.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "project": {"type": "string", "description": "Project ID or exact name."},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "color": {"type": "string"},
+            "is_favorite": {"type": "boolean"},
+            "view_style": {"type": "string", "enum": ["list", "board", "calendar"]},
+        },
+        "required": ["project"],
+    },
+}
+
+MOVE_PROJECT = {
+    "name": "todoist_move_project",
+    "description": (
+        "Move a project below another project. Set parent to null to move it to the root."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "project": {"type": "string", "description": "Project ID or exact name."},
+            "parent": {
+                "type": ["string", "null"],
+                "description": "New parent project ID/name, or null for the root.",
+            },
+        },
+        "required": ["project", "parent"],
+    },
+}
+
+REORDER_PROJECTS = {
+    "name": "todoist_reorder_projects",
+    "description": "Reorder sibling projects by assigning child order values.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "projects": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "project": {"type": "string"},
+                        "order": {"type": "integer", "minimum": 0},
+                    },
+                    "required": ["project", "order"],
+                },
+            }
+        },
+        "required": ["projects"],
+    },
+}
+
+ARCHIVE_PROJECT = {
+    "name": "todoist_archive_project",
+    "description": "Archive a Todoist project. This is reversible.",
+    "parameters": {
+        "type": "object",
+        "properties": {"project": {"type": "string"}},
+        "required": ["project"],
+    },
+}
+
+UNARCHIVE_PROJECT = {
+    "name": "todoist_unarchive_project",
+    "description": "Unarchive a Todoist project by ID.",
+    "parameters": {
+        "type": "object",
+        "properties": {"project_id": {"type": "string"}},
+        "required": ["project_id"],
+    },
+}
+
+DELETE_PROJECT = {
+    "name": "todoist_delete_project",
+    "description": (
+        "Permanently delete a project and its descendant sections and tasks. "
+        "The caller MUST set confirm=true."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "project": {"type": "string"},
+            "confirm": {"type": "boolean"},
+        },
+        "required": ["project", "confirm"],
+    },
+}
+
 LIST_SECTIONS = {
     "name": "todoist_list_sections",
     "description": "List sections, optionally filtered to a single project (id or name).",
@@ -195,6 +361,122 @@ LIST_SECTIONS = {
     },
 }
 
+GET_SECTION = {
+    "name": "todoist_get_section",
+    "description": "Get a section by ID or exact name, optionally scoped to a project.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "section": {"type": "string"},
+            "project": {"type": "string"},
+        },
+        "required": ["section"],
+    },
+}
+
+CREATE_SECTION = {
+    "name": "todoist_create_section",
+    "description": "Create a section inside a Todoist project.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "project": {"type": "string"},
+            "order": {"type": "integer", "minimum": 0},
+            "description": {"type": "string"},
+        },
+        "required": ["name", "project"],
+    },
+}
+
+UPDATE_SECTION = {
+    "name": "todoist_update_section",
+    "description": "Update mutable fields on an active section.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "section": {"type": "string"},
+            "project": {"type": "string", "description": "Optional lookup scope."},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "section_order": {"type": "integer", "minimum": 0},
+            "is_collapsed": {"type": "boolean"},
+        },
+        "required": ["section"],
+    },
+}
+
+MOVE_SECTION = {
+    "name": "todoist_move_section",
+    "description": "Move a section to another project.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "section": {"type": "string"},
+            "project": {"type": "string", "description": "Destination project ID or name."},
+        },
+        "required": ["section", "project"],
+    },
+}
+
+REORDER_SECTIONS = {
+    "name": "todoist_reorder_sections",
+    "description": "Reorder sibling sections by assigning section order values.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "sections": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "section": {"type": "string"},
+                        "order": {"type": "integer", "minimum": 0},
+                    },
+                    "required": ["section", "order"],
+                },
+            }
+        },
+        "required": ["sections"],
+    },
+}
+
+ARCHIVE_SECTION = {
+    "name": "todoist_archive_section",
+    "description": "Archive a Todoist section. This is reversible.",
+    "parameters": {
+        "type": "object",
+        "properties": {"section": {"type": "string"}},
+        "required": ["section"],
+    },
+}
+
+UNARCHIVE_SECTION = {
+    "name": "todoist_unarchive_section",
+    "description": "Unarchive a Todoist section by ID.",
+    "parameters": {
+        "type": "object",
+        "properties": {"section_id": {"type": "string"}},
+        "required": ["section_id"],
+    },
+}
+
+DELETE_SECTION = {
+    "name": "todoist_delete_section",
+    "description": (
+        "Permanently delete a section and all of its tasks. The caller MUST set confirm=true."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "section": {"type": "string"},
+            "confirm": {"type": "boolean"},
+        },
+        "required": ["section", "confirm"],
+    },
+}
+
 LIST_LABELS = {
     "name": "todoist_list_labels",
     "description": "List all personal labels the user has defined.",
@@ -204,6 +486,63 @@ LIST_LABELS = {
             "limit": {"type": "integer"},
             "cursor": {"type": "string"},
         },
+    },
+}
+
+GET_LABEL = {
+    "name": "todoist_get_label",
+    "description": "Get a personal label by ID or exact name.",
+    "parameters": {
+        "type": "object",
+        "properties": {"label": {"type": "string"}},
+        "required": ["label"],
+    },
+}
+
+CREATE_LABEL = {
+    "name": "todoist_create_label",
+    "description": "Create a personal Todoist label.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "order": {"type": "integer", "minimum": 0},
+            "color": {"type": "string"},
+            "is_favorite": {"type": "boolean"},
+        },
+        "required": ["name"],
+    },
+}
+
+UPDATE_LABEL = {
+    "name": "todoist_update_label",
+    "description": "Update a personal label by ID or exact name.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+            "name": {"type": "string"},
+            "order": {"type": "integer", "minimum": 0},
+            "color": {"type": "string"},
+            "is_favorite": {"type": "boolean"},
+        },
+        "required": ["label"],
+    },
+}
+
+DELETE_LABEL = {
+    "name": "todoist_delete_label",
+    "description": (
+        "Permanently delete a personal label from Todoist and remove it from tasks. "
+        "The caller MUST set confirm=true."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "label": {"type": "string"},
+            "confirm": {"type": "boolean"},
+        },
+        "required": ["label", "confirm"],
     },
 }
 
@@ -238,6 +577,42 @@ LIST_COMMENTS = {
             "limit": {"type": "integer"},
             "cursor": {"type": "string"},
         },
+    },
+}
+
+GET_COMMENT = {
+    "name": "todoist_get_comment",
+    "description": "Get a Todoist comment by ID.",
+    "parameters": {
+        "type": "object",
+        "properties": {"comment_id": {"type": "string"}},
+        "required": ["comment_id"],
+    },
+}
+
+UPDATE_COMMENT = {
+    "name": "todoist_update_comment",
+    "description": "Replace the content of an existing Todoist comment.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "comment_id": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["comment_id", "content"],
+    },
+}
+
+DELETE_COMMENT = {
+    "name": "todoist_delete_comment",
+    "description": "Permanently delete a comment. The caller MUST set confirm=true.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "comment_id": {"type": "string"},
+            "confirm": {"type": "boolean"},
+        },
+        "required": ["comment_id", "confirm"],
     },
 }
 

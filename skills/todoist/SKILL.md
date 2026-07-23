@@ -11,7 +11,7 @@ You have Todoist tools (prefixed `todoist_*`) that talk to the real Todoist API 
 
 1. **Look before you write.** When the user names a project, section, or task in natural language, resolve it first with `todoist_list_projects` / `todoist_list_sections` / `todoist_list_tasks`. The tools accept names directly, but seeing the actual IDs and existing tasks in context lets you spot ambiguity ("which 'Personal'?") and avoid silent mismatches.
 2. **Prefer `todoist_create_or_update_task` over `todoist_create_task`** unless the user explicitly says "make another one" or you're inside a deliberate bulk-create loop. The upsert variant looks for an open task with matching normalized content in the same project (and label, if you pass `label:`) and updates it instead of creating a duplicate.
-3. **Never call `todoist_delete_task` without `confirm: true`.** The tool refuses without it and returns a safety error — that's intentional. Delete is the only destructive operation here; completion is reversible via `todoist_reopen_task`, deletion is not. If the user says "delete the X task," echo back which task you're about to delete, then call with `confirm: true`.
+3. **Never call a `todoist_delete_*` tool without `confirm: true`.** Every delete tool refuses without it and returns a safety error. Deleting a project or section also deletes its descendant tasks, so show the exact object and impact before asking for confirmation. Archive projects and sections when the user wants a reversible removal.
 4. **When the user wants something "off their list," default to completing, not deleting.** Completion preserves history; deletion erases it. Only delete when the user explicitly says delete/remove-completely.
 
 ## Standard flows
@@ -24,7 +24,7 @@ You have Todoist tools (prefixed `todoist_*`) that talk to the real Todoist API 
 ### Finding tasks
 - For "what's on my plate today / this week / overdue": use `todoist_list_tasks` with `filter: "today"`, `"7 days"`, or `"overdue"`. Todoist's filter language supports `&`, `|`, `!`, `@label`, `p1`, `#project`, etc.
 - For a specific project: `project: "Project Name"` (no filter needed).
-- Filter and project narrow the same set — combine when you can.
+- Do not combine `filter` with project, section, parent, label, or IDs. Todoist API v1 uses a dedicated filter endpoint; include those constraints in the filter expression instead.
 
 ### Bulk operations
 - Before any bulk create, run `todoist_find_duplicate_tasks` scoped to the project (and label, if relevant). Resolve the duplicates with the user before adding more.
@@ -32,6 +32,12 @@ You have Todoist tools (prefixed `todoist_*`) that talk to the real Todoist API 
 
 ### Comments
 - `todoist_add_comment` needs either `task_id` or `project` (not both). If the user says "leave a note on task X," look it up first to get the ID.
+
+### Projects and sections
+- A Todoist project is a task list; a section is a grouping inside a project.
+- Use `todoist_create_project` or `todoist_create_section` when the user asks for a new list or grouping.
+- Use the dedicated move tools to change hierarchy or ownership, and the reorder tools only for sibling objects that share the same parent.
+- Prefer archive over delete for projects and sections unless the user explicitly requests permanent deletion.
 
 ## Pagination
 
